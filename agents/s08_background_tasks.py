@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Harness: background execution -- the model thinks while the harness waits.
 """
 s08_background_tasks.py - Background Tasks
 
@@ -30,18 +29,17 @@ import subprocess
 import threading
 import uuid
 from pathlib import Path
+import time
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
+from openai_compat import Anthropic
 
 load_dotenv(override=True)
 
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
-
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
-MODEL = os.environ["MODEL_ID"]
+client = Anthropic(
+)
+MODEL = os.environ.get("MODEL_ID", "stepfun/step-3.5-flash:free")
 
 SYSTEM = f"You are a coding agent at {WORKDIR}. Use background_run for long-running commands."
 
@@ -51,14 +49,18 @@ class BackgroundManager:
     def __init__(self):
         self.tasks = {}  # task_id -> {status, result, command}
         self._notification_queue = []  # completed task results
-        self._lock = threading.Lock()
+        self._lock = threading.Lock() # threading是模块，Lock是模块里的一个类，创建锁对象用来保护共享资源（这里是_notification_queue）
 
     def run(self, command: str) -> str:
         """Start a background thread, return task_id immediately."""
         task_id = str(uuid.uuid4())[:8]
-        self.tasks[task_id] = {"status": "running", "result": None, "command": command}
+        self.tasks[task_id] = {
+            "status": "running",
+            "result": None,
+            "command": command,
+        }
         thread = threading.Thread(
-            target=self._execute, args=(task_id, command), daemon=True
+            target=self._execute, args=(task_id, command), daemon=True # 设置为守护线程，主线程退出时它会自动结束
         )
         thread.start()
         return f"Background task {task_id} started: {command[:80]}"
@@ -67,8 +69,12 @@ class BackgroundManager:
         """Thread target: run subprocess, capture output, push to queue."""
         try:
             r = subprocess.run(
-                command, shell=True, cwd=WORKDIR,
-                capture_output=True, text=True, timeout=300
+                command,
+                shell=True,
+                cwd=WORKDIR,
+                capture_output=True,
+                text=True,
+                timeout=300,
             )
             output = (r.stdout + r.stderr).strip()[:50000]
             status = "completed"
@@ -81,12 +87,14 @@ class BackgroundManager:
         self.tasks[task_id]["status"] = status
         self.tasks[task_id]["result"] = output or "(no output)"
         with self._lock:
-            self._notification_queue.append({
-                "task_id": task_id,
-                "status": status,
-                "command": command[:80],
-                "result": (output or "(no output)")[:500],
-            })
+            self._notification_queue.append(
+                {
+                    "task_id": task_id,
+                    "status": status,
+                    "command": command[:80],
+                    "result": (output or "(no output)")[:500],
+                }
+            )
 
     def check(self, task_id: str = None) -> str:
         """Check status of one task or list all."""
@@ -118,17 +126,25 @@ def safe_path(p: str) -> Path:
         raise ValueError(f"Path escapes workspace: {p}")
     return path
 
+
 def run_bash(command: str) -> str:
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
     try:
-        r = subprocess.run(command, shell=True, cwd=WORKDIR,
-                           capture_output=True, text=True, timeout=120)
+        r = subprocess.run(
+            command,
+            shell=True,
+            cwd=WORKDIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         out = (r.stdout + r.stderr).strip()
         return out[:50000] if out else "(no output)"
     except subprocess.TimeoutExpired:
         return "Error: Timeout (120s)"
+
 
 def run_read(path: str, limit: int = None) -> str:
     try:
@@ -139,6 +155,7 @@ def run_read(path: str, limit: int = None) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+
 def run_write(path: str, content: str) -> str:
     try:
         fp = safe_path(path)
@@ -147,6 +164,7 @@ def run_write(path: str, content: str) -> str:
         return f"Wrote {len(content)} bytes"
     except Exception as e:
         return f"Error: {e}"
+
 
 def run_edit(path: str, old_text: str, new_text: str) -> str:
     try:
@@ -161,43 +179,110 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
 
 
 TOOL_HANDLERS = {
-    "bash":             lambda **kw: run_bash(kw["command"]),
-    "read_file":        lambda **kw: run_read(kw["path"], kw.get("limit")),
-    "write_file":       lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file":        lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    "background_run":   lambda **kw: BG.run(kw["command"]),
+    "bash": lambda **kw: run_bash(kw["command"]),
+    "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
+    "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
+    "edit_file": lambda **kw: run_edit(
+        kw["path"], kw["old_text"], kw["new_text"]
+    ),
+    "background_run": lambda **kw: BG.run(kw["command"]),
     "check_background": lambda **kw: BG.check(kw.get("task_id")),
 }
 
 TOOLS = [
-    {"name": "bash", "description": "Run a shell command (blocking).",
-     "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
-    {"name": "read_file", "description": "Read file contents.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["path"]}},
-    {"name": "write_file", "description": "Write content to file.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
-    {"name": "edit_file", "description": "Replace exact text in file.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
-    {"name": "background_run", "description": "Run command in background thread. Returns task_id immediately.",
-     "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
-    {"name": "check_background", "description": "Check background task status. Omit task_id to list all.",
-     "input_schema": {"type": "object", "properties": {"task_id": {"type": "string"}}}},
+    {
+        "name": "bash",
+        "description": "Run a shell command (blocking).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": "Read file contents.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "write_file",
+        "description": "Write content to file.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "edit_file",
+        "description": "Replace exact text in file.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "old_text": {"type": "string"},
+                "new_text": {"type": "string"},
+            },
+            "required": ["path", "old_text", "new_text"],
+        },
+    },
+    {
+        "name": "background_run",
+        "description": "Run command in background thread. Returns task_id immediately.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "check_background",
+        "description": "Check background task status. Omit task_id to list all.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+        },
+    },
 ]
 
 
 def agent_loop(messages: list):
     while True:
         # Drain background notifications and inject as system message before LLM call
-        notifs = BG.drain_notifications()
+        notifs = BG.drain_notifications() # 这时帮厨已经把完成的任务结果放在了_notification_queue里，主线程来取了
         if notifs and messages:
             notif_text = "\n".join(
-                f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs
+                f"[bg:{n['task_id']}] {n['status']}: {n['result']}"
+                for n in notifs
             )
-            messages.append({"role": "user", "content": f"<background-results>\n{notif_text}\n</background-results>"})
-            messages.append({"role": "assistant", "content": "Noted background results."})
+            # 👇👇👇 加上这个“监控探头” 👇👇👇
+            print(f"\n📥 [邮箱提醒] 主线程在这一轮循环发现了信件！内容是：\n{notif_text}\n")
+            # 👆👆👆 👆👆👆
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"<background-results>\n{notif_text}\n</background-results>",
+                }
+            )
+            messages.append(
+                {"role": "assistant", "content": "Noted background results."}
+            )
         response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
+            model=MODEL,
+            system=SYSTEM,
+            messages=messages,
+            tools=TOOLS,
+            max_tokens=8000,
         )
         messages.append({"role": "assistant", "content": response.content})
         if response.stop_reason != "tool_use":
@@ -207,12 +292,28 @@ def agent_loop(messages: list):
             if block.type == "tool_use":
                 handler = TOOL_HANDLERS.get(block.name)
                 try:
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
+                    output = (
+                        handler(**block.input)
+                        if handler
+                        else f"Unknown tool: {block.name}"
+                    )
                 except Exception as e:
                     output = f"Error: {e}"
                 print(f"> {block.name}: {str(output)[:200]}")
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": str(output),
+                    }
+                )
         messages.append({"role": "user", "content": results})
+        # time.sleep(0.1)
+        # 判断一下是不是刚刚执行了 background_run 工具
+        # 只要执行了工具，主线程就在这里硬睡 10 秒（但不阻碍后台线程干活）
+        # print("\n🕒 [测试] 主线程开始休眠 10 秒，让后台的帮厨有时间把信塞进邮箱...")
+        # time.sleep(10)
+        # print("🕒 [测试] 主线程睡醒了！马上进入下一轮循环开邮箱！\n")
 
 
 if __name__ == "__main__":

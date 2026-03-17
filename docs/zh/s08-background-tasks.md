@@ -3,8 +3,6 @@
 `s01 > s02 > s03 > s04 > s05 > s06 | s07 > [ s08 ] s09 > s10 > s11 > s12`
 
 > *"慢操作丢后台, agent 继续想下一步"* -- 后台线程跑命令, 完成后注入通知。
->
-> **Harness 层**: 后台执行 -- 模型继续思考, harness 负责等待。
 
 ## 问题
 
@@ -106,6 +104,12 @@ python agents/s08_background_tasks.py
 
 试试这些 prompt (英文 prompt 对 LLM 效果更好, 也可以用中文):
 
-1. `Run "sleep 5 && echo done" in the background, then create a file while it runs`
-2. `Start 3 background tasks: "sleep 2", "sleep 4", "sleep 6". Check their status.`
+1. `Run "sleep 5 && echo done" in the background, then create a file while it runs`。 #有bug？
+
+    Use the background_run tool to run 'sleep 5'and "sleep 7".IMMEDIATELY after Step 1 starts, without waiting for it to finish, use a normal tool to create a file named 'hello.txt'. 
+
+   Use the background_run tool to run 'sleep 5'and IMMEDIATELY after Step 1 starts, without waiting for it to finish, use a normal tool to create two files named 'hello1.txt' and 'hello2.txt'
+
+2. `Start 3 background tasks: "sleep 5", "sleep 7", "sleep 9". Check their status.` #有bug？
+
 3. `Run pytest in the background and keep working on other things`

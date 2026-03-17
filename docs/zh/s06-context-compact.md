@@ -3,8 +3,6 @@
 `s01 > s02 > s03 > s04 > s05 > [ s06 ] | s07 > s08 > s09 > s10 > s11 > s12`
 
 > *"上下文总会满, 要有办法腾地方"* -- 三层压缩策略, 换来无限会话。
->
-> **Harness 层**: 压缩 -- 干净的记忆, 无限的会话。
 
 ## 问题
 
@@ -125,3 +123,47 @@ python agents/s06_context_compact.py
 1. `Read every Python file in the agents/ directory one by one` (观察 micro-compact 替换旧结果)
 2. `Keep reading files until compression triggers automatically`
 3. `Use the compact tool to manually compress the conversation`
+
+```
+content="I'll help you read every Python file in the agents/ directory. Let me start by finding all Python files in that directory."
+Function(arguments='{"command": "find agents/ -name \\"*.py\\" -type f | sort"}',
+name='bash')
+```
+
+**进入client.messages.create 前** 
+message = [{}]
+
+**进入client.messages.create 后**
+发送给大模型的消息：oai = [ {}, {}, {}, {}... ]
+
+**大模型返回的消息，在client.messages.create内部**
+ChatCompletionMessage(content="I'll help you read every Python file in the agents/ directory. Let me start by finding all Python files in that directory.",
+refusal=None,
+role='assistant',
+annotations=None,
+audio=None,
+function_call=None,
+tool_calls=[ChatCompletionMessageFunctionToolCall(id='call_e92c46cc7ee4497bb1190b69',
+function=Function(arguments='{"command": "find agents/ -name \\"*.py\\" -type f | sort"}',
+name='bash'),
+type='function',
+index=0)],
+reasoning='The user wants me to read every Python file in the agents/ directory one by one. I need to first check if there is an agents/ directory and what Python files are in it, then read them sequentially.\n\nLet me start by listing the files in the agents/ directory to see what Python files are there.',
+reasoning_details=[{'type': 'reasoning.text', 'text': 'The user wants me to read every Python file in the agents/ directory one by one. I need to first check if there is an agents/ directory and what Python files are in it, then read them sequentially.\n\nLet me start by listing the files in the agents/ directory to see what Python files are there.', 'format': 'unknown', 'index': 0}]),
+native_finish_reason='tool_calls')]
+tool_calls等于一个列表，说明内部可以有多个工具调用
+
+**在client.messages.create内部**
+blocks = [TextBlock(msg.content) | ToolUseBlock(tc.id, tc.function.name, input_dict)] #input_dict被__repr__隐藏
+[TextBlock(text="I'll help you read every Python file in the agents/ directory. Let me...ding all Python files in that directory."), ToolUseBlock(name='bash', id='call_e92c46cc7ee4497bb1190b69')]
+👇变成
+AnthropicResponse(blocks, stop_reason)类
+
+**在client.messages.create外部**
+message = [{"role":"user", "content":""},{"role":"assistant", "content":[TextBlock(msg.content) | ToolUseBlock(tc.id, tc.function.name, input_dict)], {"role":"user", "content":[{'type': 'tool_result', 'tool_use_id': 'call_e92c46cc7ee4497bb1190b69', 'content': 'agents/__init__.py\nagents/openai_compat.py\nagents/s_full.py\nagents/s01_agent_loop.py\n...s.py\nagents/s12_worktree_task_isolation.py'}]}]
+
+有三种message = [用户输入, 模型回复, 工具调用结果, ...]
+
+1. 用户输入 {"role":"user", "content":""}
+2. 模型回复 {"role":"assistant", "content":[TextBlock(msg.content) or ToolUseBlock(tc.id, tc.function.name, input_dict)]
+3. 工具调用结果 {"role":"user", "content":[{'type': 'tool_result', 'tool_use_id': 'call_e92c46cc7ee4497bb1190b69', 'content':'agents/__init__.py\nagents/openai_compat.py\nagents/s_full.py\nagents/s01_agent_loop.py\n...s.py\nagents/s12_worktree_task_isolation.py'}, {另一个工具调用结果信息}]}

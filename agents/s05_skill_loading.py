@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Harness: on-demand knowledge -- domain expertise, loaded when the model asks.
 """
 s05_skill_loading.py - Skills
 
@@ -40,17 +39,15 @@ import re
 import subprocess
 from pathlib import Path
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
+import yaml
+from openai_compat import Anthropic
 
 load_dotenv(override=True)
 
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
-
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
-MODEL = os.environ["MODEL_ID"]
+client = Anthropic()
+MODEL = os.environ.get("MODEL_ID", "stepfun/step-3.5-flash:free")
 SKILLS_DIR = WORKDIR / "skills"
 
 
@@ -70,17 +67,37 @@ class SkillLoader:
             name = meta.get("name", f.parent.name)
             self.skills[name] = {"meta": meta, "body": body, "path": str(f)}
 
-    def _parse_frontmatter(self, text: str) -> tuple:
-        """Parse YAML frontmatter between --- delimiters."""
+    # def _parse_frontmatter(self, text: str) -> tuple:
+    #     """Parse YAML frontmatter between --- delimiters."""
+    #     match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
+    #     if not match:
+    #         return {}, text
+    #     meta = {}
+    #     for line in match.group(1).strip().splitlines():
+    #         if ":" in line:
+    #             key, val = line.split(":", 1)
+    #             meta[key.strip()] = val.strip()
+    #     return meta, match.group(2).strip()
+    def _parse_frontmatter(self, text: str) -> tuple[dict, str]: #mybug
+        """使用 PyYAML 解析 --- 之间的元数据"""
         match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
         if not match:
             return {}, text
-        meta = {}
-        for line in match.group(1).strip().splitlines():
-            if ":" in line:
-                key, val = line.split(":", 1)
-                meta[key.strip()] = val.strip()
-        return meta, match.group(2).strip()
+        
+        yaml_text = match.group(1).strip()
+        body_text = match.group(2).strip()
+        
+        try:
+            # safe_load 可以完美解析多行字符串 '|' 并且更安全
+            meta = yaml.safe_load(yaml_text) 
+            # 防止 yaml_text 为空时 safe_load 返回 None
+            if meta is None:
+                meta = {}
+        except yaml.YAMLError as e:
+            print(f"YAML 解析错误: {e}")
+            meta = {}
+        print(type(meta))
+        return meta, body_text
 
     def get_descriptions(self) -> str:
         """Layer 1: short descriptions for the system prompt."""
@@ -121,17 +138,25 @@ def safe_path(p: str) -> Path:
         raise ValueError(f"Path escapes workspace: {p}")
     return path
 
+
 def run_bash(command: str) -> str:
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
     try:
-        r = subprocess.run(command, shell=True, cwd=WORKDIR,
-                           capture_output=True, text=True, timeout=120)
+        r = subprocess.run(
+            command,
+            shell=True,
+            cwd=WORKDIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         out = (r.stdout + r.stderr).strip()
         return out[:50000] if out else "(no output)"
     except subprocess.TimeoutExpired:
         return "Error: Timeout (120s)"
+
 
 def run_read(path: str, limit: int = None) -> str:
     try:
@@ -142,6 +167,7 @@ def run_read(path: str, limit: int = None) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+
 def run_write(path: str, content: str) -> str:
     try:
         fp = safe_path(path)
@@ -150,6 +176,7 @@ def run_write(path: str, content: str) -> str:
         return f"Wrote {len(content)} bytes"
     except Exception as e:
         return f"Error: {e}"
+
 
 def run_edit(path: str, old_text: str, new_text: str) -> str:
     try:
@@ -164,32 +191,84 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
 
 
 TOOL_HANDLERS = {
-    "bash":       lambda **kw: run_bash(kw["command"]),
-    "read_file":  lambda **kw: run_read(kw["path"], kw.get("limit")),
+    "bash": lambda **kw: run_bash(kw["command"]),
+    "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file":  lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+    "edit_file": lambda **kw: run_edit(
+        kw["path"], kw["old_text"], kw["new_text"]
+    ),
     "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
 }
 
 TOOLS = [
-    {"name": "bash", "description": "Run a shell command.",
-     "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
-    {"name": "read_file", "description": "Read file contents.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["path"]}},
-    {"name": "write_file", "description": "Write content to file.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
-    {"name": "edit_file", "description": "Replace exact text in file.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
-    {"name": "load_skill", "description": "Load specialized knowledge by name.",
-     "input_schema": {"type": "object", "properties": {"name": {"type": "string", "description": "Skill name to load"}}, "required": ["name"]}},
+    {
+        "name": "bash",
+        "description": "Run a shell command.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": "Read file contents.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "write_file",
+        "description": "Write content to file.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "edit_file",
+        "description": "Replace exact text in file.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "old_text": {"type": "string"},
+                "new_text": {"type": "string"},
+            },
+            "required": ["path", "old_text", "new_text"],
+        },
+    },
+    {
+        "name": "load_skill",
+        "description": "Load specialized knowledge by name.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Skill name to load"}
+            },
+            "required": ["name"],
+        },
+    },
 ]
 
 
 def agent_loop(messages: list):
     while True:
         response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
+            model=MODEL,
+            system=SYSTEM,
+            messages=messages,
+            tools=TOOLS,
+            max_tokens=8000,
         )
         messages.append({"role": "assistant", "content": response.content})
         if response.stop_reason != "tool_use":
@@ -199,11 +278,21 @@ def agent_loop(messages: list):
             if block.type == "tool_use":
                 handler = TOOL_HANDLERS.get(block.name)
                 try:
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
+                    output = (
+                        handler(**block.input)
+                        if handler
+                        else f"Unknown tool: {block.name}"
+                    )
                 except Exception as e:
                     output = f"Error: {e}"
                 print(f"> {block.name}: {str(output)[:200]}")
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": str(output),
+                    }
+                )
         messages.append({"role": "user", "content": results})
 
 

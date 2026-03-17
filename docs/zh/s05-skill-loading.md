@@ -3,8 +3,6 @@
 `s01 > s02 > s03 > s04 > [ s05 ] s06 | s07 > s08 > s09 > s10 > s11 > s12`
 
 > *"用到什么知识, 临时加载什么知识"* -- 通过 tool_result 注入, 不塞 system prompt。
->
-> **Harness 层**: 按需知识 -- 模型开口要时才给的领域专长。
 
 ## 问题
 
@@ -108,3 +106,33 @@ python agents/s05_skill_loading.py
 2. `Load the agent-builder skill and follow its instructions`
 3. `I need to do a code review -- load the relevant skill first`
 4. `Build an MCP server using the mcp-builder skill`
+
+```
+`What skills are available?`
+
+content="I have access to several specialized skills:\n\n1. **agent-builder** - Build AI agents with custom capabilities\n2. **code-review** - Perform comprehensive code reviews (security, performance, maintainability)\n3. **mcp-builder** - Create MCP (Model Context Protocol) servers to extend Claude's capabilities\n4. **pdf** - Process PDF files (extract text, create PDFs, merge documents)\n\nYou can use `load_skill` to load any of these skills before working on tasks that require specialized knowledge. For example, if you need to review code, load the code-review skill."
+```
+
+```
+Load the agent-builder skill and follow its instructions
+
+content=None
+Function(arguments='{"name": "agent-builder"}',
+name='load_skill')
+
+content="I've successfully loaded the **agent-builder** skill. This skill provides a comprehensive framework for building AI agents based on the principle that the model already knows how to be an agent - our job is simply to provide the right capabilities, knowledge, and context.\n\nThe agent builder follows these core principles:\n- **Simple loop**: Model sees context + capabilities, decides to act or respond\n- **3 key elements**: Capabilities (what it can DO), Knowledge (what it KNOWS), Context (what has happened)\n- **Start minimal**: 3-5 capabilities, add complexity only when needed\n- **Trust the model**: Don't over-engineer or pre-specify workflows\n\nTo build an agent, I need to understand:\n\n1. **Purpose**: What should this agent accomplish?\n2. **Domain**: What world does it operate in? (customer service, research, operations, creative, etc.)\n3. **Essential actions**: What 3-5 capabilities are critical?\n4. **Expertise needed**: What domain knowledge should it access?\n5. **Trust level**: What decisions can be delegated to the model?\n\nWhat kind of agent would you like me to help you build? Please describe the agent's purpose and domain, and we can start designing it using the agent-builder framework."
+
+```
+
+```
+content="The **code-review** skill is now loaded! I'm ready to perform comprehensive code reviews focusing on:\n\n- **Security**: Injection vulnerabilities, auth issues, data exposure\n- **Correctness**: Logic errors, race conditions, error handling\n- **Performance**: N+1 queries, memory issues, inefficient algorithms\n- **Maintainability**: Naming, complexity, duplication, dead code\n- **Testing**: Coverage, edge cases, mocking, assertions\n\n**Please provide:**\n- The code you want reviewed (file contents or repository path)\n- Any specific concerns or areas of focus\n- The programming language(s) used\n- Context about what the code is supposed to do\n\nI'll conduct a thorough review and provide structured feedback with specific line references, impact assessments, and suggested fixes."
+```
+
+```
+content=None
+Function(arguments='{"name": "mcp-builder"}',
+name='load_skill')
+
+content="Great! I have the MCP builder skill loaded. I can help you build an MCP server.\n\nBefore I create the server, I need to know what functionality you'd like to expose to Claude. MCP servers can provide:\n\n- **Tools**: Functions Claude can call (like API endpoints, calculations, data operations)\n- **Resources**: Data Claude can read (like files, database records, configurations)\n- **Prompts**: Pre-built prompt templates\n\n**What would you like your MCP server to do?** Some examples:\n\n1. Weather API integration - get weather for cities\n2. Database access - query a database from Claude\n3. File operations - read/write files in a controlled way\n4. Custom calculations - perform specific computations\n5. External service integration - interact with any API\n6. Something else?\n\nPlease describe the purpose and I'll build a complete MCP server with proper error handling, security considerations, and testing setup."
+```
+

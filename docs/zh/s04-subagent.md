@@ -3,8 +3,6 @@
 `s01 > s02 > s03 > [ s04 ] s05 > s06 | s07 > s08 > s09 > s10 > s11 > s12`
 
 > *"大任务拆小, 每个小任务干净的上下文"* -- 子智能体用独立 messages[], 不污染主对话。
->
-> **Harness 层**: 上下文隔离 -- 守护模型的思维清晰度。
 
 ## 问题
 
@@ -67,7 +65,7 @@ def run_subagent(prompt: str) -> str:
                     "content": str(output)[:50000]})
         sub_messages.append({"role": "user", "content": results})
     return "".join(
-        b.text for b in response.content if hasattr(b, "text")
+        b.text for b in response.content if hasattr(b, "text")  
     ) or "(no summary)"
 ```
 
@@ -94,3 +92,26 @@ python agents/s04_subagent.py
 1. `Use a subtask to find what testing framework this project uses`
 2. `Delegate: read all .py files and summarize what each one does`
 3. `Use a task to create a new module, then verify it from here`
+
+```
+user:	
+
+assistant:	content=None
+Function(arguments='{"description": "Summarize all Python files", "prompt": "Find and read all .py files in the project. For each file, provide a brief summary of what it does, including:\\n- Its main purpose and functionality\\n- Key classes, functions, or modules it defines\\n- Any notable imports or dependencies\\n- How it fits into the overall project structure\\n\\nReturn a comprehensive summary of all Python files found."}',
+name='task')
+
+subassistant:	content="I'll help you analyze all Python files in the project. Let me start by exploring the project structure and finding all .py files."
+Function(arguments='{"command": "find . -type f -name \\"*.py\\" | head -20"}',
+name='bash')
+
+user:	{'type': 'tool_result', 'tool_use_id': 'call_8b66601b90ba433eb4e4a894', 'content': './hello.py\n./tests/test_utils.py\n./__init__.py\n./agents/s_full.py\n./agents/s03_todo_w...ion.py\n./utils.py\n./myLearnTest/testS03.py'}
+
+subassistant:	
+
+assistant:	
+
+user:	
+
+assistant:	
+```
+

@@ -5,8 +5,8 @@ The key insight: spawn child agents with ISOLATED context to prevent
 "context pollution" where exploration details fill up the main conversation.
 """
 
-import time
 import sys
+import time
 
 # Assuming client, MODEL, execute_tool are defined elsewhere
 
@@ -22,21 +22,18 @@ AGENT_TYPES = {
         "tools": ["bash", "read_file"],  # No write access!
         "prompt": "You are an exploration agent. Search and analyze, but NEVER modify files. Return a concise summary of what you found.",
     },
-
     # Code: Full-powered, for implementation
     "code": {
         "description": "Full agent for implementing features and fixing bugs",
         "tools": "*",  # All tools
         "prompt": "You are a coding agent. Implement the requested changes efficiently. Return a summary of what you changed.",
     },
-
     # Plan: Read-only, for design work
     "plan": {
         "description": "Planning agent for designing implementation strategies",
         "tools": ["bash", "read_file"],  # Read-only
         "prompt": "You are a planning agent. Analyze the codebase and output a numbered implementation plan. Do NOT make any changes.",
     },
-
     # Add your own types here...
     # "test": {
     #     "description": "Testing agent for running and analyzing tests",
@@ -49,8 +46,7 @@ AGENT_TYPES = {
 def get_agent_descriptions() -> str:
     """Generate descriptions for Task tool schema."""
     return "\n".join(
-        f"- {name}: {cfg['description']}"
-        for name, cfg in AGENT_TYPES.items()
+        f"- {name}: {cfg['description']}" for name, cfg in AGENT_TYPES.items()
     )
 
 
@@ -95,16 +91,16 @@ Example uses:
         "properties": {
             "description": {
                 "type": "string",
-                "description": "Short task name (3-5 words) for progress display"
+                "description": "Short task name (3-5 words) for progress display",
             },
             "prompt": {
                 "type": "string",
-                "description": "Detailed instructions for the subagent"
+                "description": "Detailed instructions for the subagent",
             },
             "agent_type": {
                 "type": "string",
                 "enum": list(AGENT_TYPES.keys()),
-                "description": "Type of agent to spawn"
+                "description": "Type of agent to spawn",
             },
         },
         "required": ["description", "prompt", "agent_type"],
@@ -116,8 +112,17 @@ Example uses:
 # SUBAGENT EXECUTION
 # =============================================================================
 
-def run_task(description: str, prompt: str, agent_type: str,
-             client, model: str, workdir, base_tools: list, execute_tool) -> str:
+
+def run_task(
+    description: str,
+    prompt: str,
+    agent_type: str,
+    client,
+    model: str,
+    workdir,
+    base_tools: list,
+    execute_tool,
+) -> str:
     """
     Execute a subagent task with isolated context.
 
@@ -185,11 +190,13 @@ Complete the task and return a clear, concise summary."""
         for tc in tool_calls:
             tool_count += 1
             output = execute_tool(tc.name, tc.input)
-            results.append({
-                "type": "tool_result",
-                "tool_use_id": tc.id,
-                "content": output
-            })
+            results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tc.id,
+                    "content": output,
+                }
+            )
 
             # Update progress (in-place on same line)
             elapsed = time.time() - start

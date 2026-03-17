@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Harness: directory isolation -- parallel execution lanes that never collide.
 """
 s12_worktree_task_isolation.py - Worktree + Task Isolation
 
@@ -37,17 +36,14 @@ import subprocess
 import time
 from pathlib import Path
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
+from openai_compat import Anthropic
 
 load_dotenv(override=True)
 
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
-
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
-MODEL = os.environ["MODEL_ID"]
+client = Anthropic()
+MODEL = os.environ.get("MODEL_ID", "stepfun/step-3.5-flash:free")
 
 
 def detect_repo_root(cwd: Path) -> Path | None:
@@ -102,11 +98,11 @@ class EventBus:
         }
         if error:
             payload["error"] = error
-        with self.path.open("a", encoding="utf-8") as f:
+        with self.path.open("a", encoding="utf-8") as f: # "a"追加模式
             f.write(json.dumps(payload) + "\n")
 
     def list_recent(self, limit: int = 20) -> str:
-        n = max(1, min(int(limit or 20), 200))
+        n = max(1, min(int(limit or 20), 200)) # or先看左边
         lines = self.path.read_text(encoding="utf-8").splitlines()
         recent = lines[-n:]
         items = []
@@ -168,7 +164,9 @@ class TaskManager:
     def exists(self, task_id: int) -> bool:
         return self._path(task_id).exists()
 
-    def update(self, task_id: int, status: str = None, owner: str = None) -> str:
+    def update(
+        self, task_id: int, status: str = None, owner: str = None
+    ) -> str:
         task = self._load(task_id)
         if status:
             if status not in ("pending", "in_progress", "completed"):
@@ -180,7 +178,9 @@ class TaskManager:
         self._save(task)
         return json.dumps(task, indent=2)
 
-    def bind_worktree(self, task_id: int, worktree: str, owner: str = "") -> str:
+    def bind_worktree(
+        self, task_id: int, worktree: str, owner: str = ""
+    ) -> str:
         task = self._load(task_id)
         task["worktree"] = worktree
         if owner:
@@ -249,7 +249,9 @@ class WorktreeManager:
 
     def _run_git(self, args: list[str]) -> str:
         if not self.git_available:
-            raise RuntimeError("Not in a git repository. worktree tools require git.")
+            raise RuntimeError(
+                "Not in a git repository. worktree tools require git."
+            )
         r = subprocess.run(
             ["git", *args],
             cwd=self.repo_root,
@@ -281,7 +283,9 @@ class WorktreeManager:
                 "Invalid worktree name. Use 1-40 chars: letters, numbers, ., _, -"
             )
 
-    def create(self, name: str, task_id: int = None, base_ref: str = "HEAD") -> str:
+    def create(
+        self, name: str, task_id: int = None, base_ref: str = "HEAD"
+    ) -> str:
         self._validate_name(name)
         if self._find(name):
             raise ValueError(f"Worktree '{name}' already exists in index")
@@ -296,7 +300,9 @@ class WorktreeManager:
             worktree={"name": name, "base_ref": base_ref},
         )
         try:
-            self._run_git(["worktree", "add", "-b", branch, str(path), base_ref])
+            self._run_git(
+                ["worktree", "add", "-b", branch, str(path), base_ref]
+            )
 
             entry = {
                 "name": name,
@@ -391,14 +397,20 @@ class WorktreeManager:
         except subprocess.TimeoutExpired:
             return "Error: Timeout (300s)"
 
-    def remove(self, name: str, force: bool = False, complete_task: bool = False) -> str:
+    def remove(
+        self, name: str, force: bool = False, complete_task: bool = False
+    ) -> str:
         wt = self._find(name)
         if not wt:
             return f"Error: Unknown worktree '{name}'"
 
         self.events.emit(
             "worktree.remove.before",
-            task={"id": wt.get("task_id")} if wt.get("task_id") is not None else {},
+            task=(
+                {"id": wt.get("task_id")}
+                if wt.get("task_id") is not None
+                else {}
+            ),
             worktree={"name": name, "path": wt.get("path")},
         )
         try:
@@ -432,14 +444,26 @@ class WorktreeManager:
 
             self.events.emit(
                 "worktree.remove.after",
-                task={"id": wt.get("task_id")} if wt.get("task_id") is not None else {},
-                worktree={"name": name, "path": wt.get("path"), "status": "removed"},
+                task=(
+                    {"id": wt.get("task_id")}
+                    if wt.get("task_id") is not None
+                    else {}
+                ),
+                worktree={
+                    "name": name,
+                    "path": wt.get("path"),
+                    "status": "removed",
+                },
             )
             return f"Removed worktree '{name}'"
         except Exception as e:
             self.events.emit(
                 "worktree.remove.failed",
-                task={"id": wt.get("task_id")} if wt.get("task_id") is not None else {},
+                task=(
+                    {"id": wt.get("task_id")}
+                    if wt.get("task_id") is not None
+                    else {}
+                ),
                 worktree={"name": name, "path": wt.get("path")},
                 error=str(e),
             )
@@ -461,14 +485,22 @@ class WorktreeManager:
 
         self.events.emit(
             "worktree.keep",
-            task={"id": wt.get("task_id")} if wt.get("task_id") is not None else {},
+            task=(
+                {"id": wt.get("task_id")}
+                if wt.get("task_id") is not None
+                else {}
+            ),
             worktree={
                 "name": name,
                 "path": wt.get("path"),
                 "status": "kept",
             },
         )
-        return json.dumps(kept, indent=2) if kept else f"Error: Unknown worktree '{name}'"
+        return (
+            json.dumps(kept, indent=2)
+            if kept
+            else f"Error: Unknown worktree '{name}'"
+        )
 
 
 WORKTREES = WorktreeManager(REPO_ROOT, TASKS, EVENTS)
@@ -537,18 +569,30 @@ TOOL_HANDLERS = {
     "bash": lambda **kw: run_bash(kw["command"]),
     "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    "task_create": lambda **kw: TASKS.create(kw["subject"], kw.get("description", "")),
+    "edit_file": lambda **kw: run_edit(
+        kw["path"], kw["old_text"], kw["new_text"]
+    ),
+    "task_create": lambda **kw: TASKS.create(
+        kw["subject"], kw.get("description", "")
+    ),
     "task_list": lambda **kw: TASKS.list_all(),
     "task_get": lambda **kw: TASKS.get(kw["task_id"]),
-    "task_update": lambda **kw: TASKS.update(kw["task_id"], kw.get("status"), kw.get("owner")),
-    "task_bind_worktree": lambda **kw: TASKS.bind_worktree(kw["task_id"], kw["worktree"], kw.get("owner", "")),
-    "worktree_create": lambda **kw: WORKTREES.create(kw["name"], kw.get("task_id"), kw.get("base_ref", "HEAD")),
+    "task_update": lambda **kw: TASKS.update(
+        kw["task_id"], kw.get("status"), kw.get("owner")
+    ),
+    "task_bind_worktree": lambda **kw: TASKS.bind_worktree(
+        kw["task_id"], kw["worktree"], kw.get("owner", "")
+    ),
+    "worktree_create": lambda **kw: WORKTREES.create(
+        kw["name"], kw.get("task_id"), kw.get("base_ref", "HEAD")
+    ),
     "worktree_list": lambda **kw: WORKTREES.list_all(),
     "worktree_status": lambda **kw: WORKTREES.status(kw["name"]),
     "worktree_run": lambda **kw: WORKTREES.run(kw["name"], kw["command"]),
     "worktree_keep": lambda **kw: WORKTREES.keep(kw["name"]),
-    "worktree_remove": lambda **kw: WORKTREES.remove(kw["name"], kw.get("force", False), kw.get("complete_task", False)),
+    "worktree_remove": lambda **kw: WORKTREES.remove(
+        kw["name"], kw.get("force", False), kw.get("complete_task", False)
+    ),
     "worktree_events": lambda **kw: EVENTS.list_recent(kw.get("limit", 20)),
 }
 
@@ -744,7 +788,11 @@ def agent_loop(messages: list):
             if block.type == "tool_use":
                 handler = TOOL_HANDLERS.get(block.name)
                 try:
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
+                    output = (
+                        handler(**block.input)
+                        if handler
+                        else f"Unknown tool: {block.name}"
+                    )
                 except Exception as e:
                     output = f"Error: {e}"
                 print(f"> {block.name}: {str(output)[:200]}")

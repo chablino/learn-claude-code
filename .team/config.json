@@ -1,0 +1,20 @@
+{
+  "team_name": "default",
+  "members": [
+    {
+      "name": "Alice",
+      "role": "autonomous_worker",
+      "status": "shutdown"
+    },
+    {
+      "name": "Bob",
+      "role": "autonomous_worker",
+      "status": "shutdown"
+    },
+    {
+      "name": "Coder",
+      "role": "coder",
+      "status": "shutdown"
+    }
+  ]
+}
