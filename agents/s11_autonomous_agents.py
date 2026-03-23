@@ -151,7 +151,7 @@ def claim_task(task_id: int, owner: str) -> str:
         task = json.loads(path.read_text())
 
         # --- 修复关键点：加锁后的二次校验 ---     mybug
-        if task.get("owner") is not None or task.get("status") != "pending":
+        if task.get("owner") or task.get("status") != "pending":
             return f"Error: Task {task_id} has already been claimed by someone else"
 
         task["owner"] = owner

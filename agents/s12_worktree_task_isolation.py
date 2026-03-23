@@ -202,7 +202,7 @@ class TaskManager:
         tasks = []
         # for f in sorted(self.dir.glob("task_*.json")):
         #     tasks.append(json.loads(f.read_text()))
-        files = sorted(                         #mybug
+        files = sorted(                         # mybug
             self.dir.glob("task_*.json"), 
             key=lambda f: int(f.stem.split("_")[-1])
         )
