@@ -42,6 +42,7 @@ from pathlib import Path
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
+import yaml
 
 load_dotenv(override=True)
 
@@ -69,18 +70,24 @@ class SkillLoader:
             meta, body = self._parse_frontmatter(text)
             name = meta.get("name", f.parent.name)
             self.skills[name] = {"meta": meta, "body": body, "path": str(f)}
-
-    def _parse_frontmatter(self, text: str) -> tuple:
+    
+    def _parse_frontmatter(self, text: str) -> tuple[dict, str]:
         """Parse YAML frontmatter between --- delimiters."""
         match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
         if not match:
             return {}, text
-        meta = {}
-        for line in match.group(1).strip().splitlines():
-            if ":" in line:
-                key, val = line.split(":", 1)
-                meta[key.strip()] = val.strip()
-        return meta, match.group(2).strip()
+        
+        yaml_text = match.group(1).strip()
+        body_text = match.group(2).strip()
+        
+        try:
+            meta = yaml.safe_load(yaml_text) 
+            if meta is None:
+                meta = {}
+        except yaml.YAMLError as e:
+            print(f"YAML Parsing error: {e}")
+            meta = {}
+        return meta, body_text
 
     def get_descriptions(self) -> str:
         """Layer 1: short descriptions for the system prompt."""
