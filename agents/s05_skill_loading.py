@@ -81,8 +81,9 @@ class SkillLoader:
         body_text = match.group(2).strip()
         
         try:
-            meta = yaml.safe_load(yaml_text) 
-            if meta is None:
+            meta = yaml.safe_load(yaml_text)
+            # Ensure frontmatter is a mapping; fall back to empty dict otherwise.
+            if meta is None or not isinstance(meta, dict):
                 meta = {}
         except yaml.YAMLError as e:
             print(f"YAML Parsing error: {e}")
