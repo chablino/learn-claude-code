@@ -74,7 +74,7 @@ VALID_MSG_TYPES = {
 
 # === SECTION: base_tools ===
 def safe_path(p: str) -> Path:
-    path = (WORKDIR / p).resolve()
+    path = (WORKDIR / p).resolve() #.resolve() 是用来把带有 ../ 或 ./ 这种相对符号的乱七八糟的路径，变成一个“干净纯粹的绝对路径”
     if not path.is_relative_to(WORKDIR):
         raise ValueError(f"Path escapes workspace: {p}")
     return path
@@ -132,6 +132,9 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
 
 
 # === SECTION: todos (s03) ===
+''' TodoManager 负责管理一个待办事项列表，支持更新列表（验证输入格式和状态）、渲染为文本、检查是否有未完成的事项。
+    每个待办事项包含内容、状态（pending/in_progress/completed）和一个activeForm（用于in_progress状态）。
+    更新时会确保最多只有一个事项处于in_progress状态，并且列表长度不超过20。'''
 class TodoManager:
     def __init__(self):
         self.items = []
@@ -179,12 +182,18 @@ class TodoManager:
         done = sum(1 for t in self.items if t["status"] == "completed")
         lines.append(f"\n({done}/{len(self.items)} completed)")
         return "\n".join(lines)
-
+    # 这个函数会检查待办事项列表里是否有任何一个事项的状态不是 "completed"，如果有则返回 True，表示还有未完成的事项；
+    # 如果所有事项都是 "completed"，则返回 False。
+    # 是否还有“未关闭/未完成”的待办项。
     def has_open_items(self) -> bool:
         return any(item.get("status") != "completed" for item in self.items)
 
 
 # === SECTION: subagent (s04) ===
+''' run_subagent 负责运行一个子agent来处理特定的任务。
+它定义了一套工具（bash、read_file、write_file、edit_file）供子agent使用，并且根据agent_type（Explore或其他）来决定是否提供写权限。
+子agent通过多轮交互来完成任务，每轮调用后会检查是否有工具调用，如果有则执行对应的工具函数，并把结果反馈给子agent，
+直到子agent不再调用工具为止。最后返回子agent生成的文本总结。'''
 def run_subagent(prompt: str, agent_type: str = "Explore") -> str:
     sub_tools = [
         {
@@ -272,6 +281,8 @@ def run_subagent(prompt: str, agent_type: str = "Explore") -> str:
 
 
 # === SECTION: skills (s05) ===
+''' SkillLoader 负责加载技能定义文件（SKILL.md），解析其中的元信息（如技能名称和描述）和主体内容，
+    并提供接口来获取技能列表和加载特定技能的内容。技能定义文件可以包含一个 YAML-like 的元信息块，后面跟着技能的具体实现文本。'''
 class SkillLoader:
     def __init__(self, skills_dir: Path):
         self.skills = {}
@@ -283,7 +294,7 @@ class SkillLoader:
                 if match:
                     for line in match.group(1).strip().splitlines():
                         if ":" in line:
-                            k, v = line.split(":", 1)
+                            k, v = line.split(":", 1) #split(":", 1) 里的 1 表示最多只切一次，所以即使右边内容里还有 :，也不会继续切
                             meta[k.strip()] = v.strip()
                     body = match.group(2).strip()
                 name = meta.get("name", f.parent.name)
@@ -308,7 +319,8 @@ class SkillLoader:
 def estimate_tokens(messages: list) -> int:
     return len(json.dumps(messages, default=str)) // 4
 
-
+''' microcompact 负责在消息列表中找到所有用户消息里类型为 tool_result 的内容块，
+    如果超过3个且内容过长，就把内容替换为 "[cleared]"，以节省上下文空间。'''
 def microcompact(messages: list):
     indices = []
     for i, msg in enumerate(messages):
@@ -325,7 +337,9 @@ def microcompact(messages: list):
         if isinstance(part.get("content"), str) and len(part["content"]) > 100:
             part["content"] = "[cleared]"
 
-
+''' auto_compact 负责在消息列表过长时，自动生成一个压缩版本的上下文。
+    它会把原始消息列表保存到一个 JSONL 文件里，然后调用模型生成一个总结文本，并返回一个新的消息列表，其中包含一个压缩提示和总结内容。
+    这个函数可以帮助在对话历史过长时保持连续性，同时又不丢失重要信息。'''
 def auto_compact(messages: list) -> list:
     TRANSCRIPT_DIR.mkdir(exist_ok=True)
     path = TRANSCRIPT_DIR / f"transcript_{int(time.time())}.jsonl"
@@ -357,13 +371,14 @@ def auto_compact(messages: list) -> list:
 
 
 # === SECTION: file_tasks (s07) ===
+# TaskManager 负责管理一个基于文件的任务系统，支持创建任务、获取任务详情、更新任务状态和依赖关系、列出所有任务以及认领任务。每个任务以 JSON 文件的形式存储在指定目录下，包含任务ID、主题、描述、状态、负责人和依赖信息。更新任务时会自动处理状态变更对相关任务的影响（如完成一个任务会解除对它的依赖）。
 class TaskManager:
     def __init__(self):
         TASKS_DIR.mkdir(exist_ok=True)
 
     def _next_id(self) -> int:
         ids = [
-            int(f.stem.split("_")[1]) for f in TASKS_DIR.glob("task_*.json")
+            int(f.stem.split("_")[-1]) for f in TASKS_DIR.glob("task_*.json")
         ]
         return max(ids, default=0) + 1
 
@@ -452,11 +467,13 @@ class TaskManager:
 
 
 # === SECTION: background (s08) ===
+''' BackgroundManager 负责管理后台任务的生命周期，包括创建任务（内存）、执行命令、存储结果和提供查询接口。
+    它使用一个线程来异步执行命令，并通过一个队列来发送通知。'''
 class BackgroundManager:
     def __init__(self):
         self.tasks = {}
         self.notifications = Queue()
-
+    # 这个函数会创建一个新的后台任务，生成一个随机的tid，并且启动一个线程来执行命令，最后返回一个提示信息
     def run(self, command: str, timeout: int = 120) -> str:
         tid = str(uuid.uuid4())[:8]
         self.tasks[tid] = {
@@ -468,7 +485,7 @@ class BackgroundManager:
             target=self._exec, args=(tid, command, timeout), daemon=True
         ).start()
         return f"Background task {tid} started: {command[:80]}"
-
+    # 这个函数会在后台线程里执行命令，执行完成后会更新任务状态和结果，并且把通知放到队列里
     def _exec(self, tid: str, command: str, timeout: int):
         try:
             r = subprocess.run(
@@ -492,7 +509,7 @@ class BackgroundManager:
                 "result": self.tasks[tid]["result"][:500],
             }
         )
-
+    # 这个函数可以让用户查询某个后台任务的状态和结果，如果不提供tid参数，则会列出所有后台任务的状态和命令
     def check(self, tid: str = None) -> str:
         if tid:
             t = self.tasks.get(tid)
@@ -508,7 +525,7 @@ class BackgroundManager:
             )
             or "No bg tasks."
         )
-
+    # 这个函数会把队列里所有的通知都取出来，放到一个列表里返回
     def drain(self) -> list:
         notifs = []
         while not self.notifications.empty():
@@ -517,6 +534,8 @@ class BackgroundManager:
 
 
 # === SECTION: messaging (s09) ===
+''' MessageBus 负责在不同的队友agent之间发送和接收消息。
+    它使用文件系统来存储每个队友的收件箱，发送消息时会把消息追加到对应的文件里，读取收件箱时会把文件内容读出来并清空。'''
 class MessageBus:
     def __init__(self):
         INBOX_DIR.mkdir(parents=True, exist_ok=True)
@@ -566,6 +585,8 @@ plan_requests = {}
 
 
 # === SECTION: team (s09/s11) ===
+''' TeammateManager 负责管理队友agent的生命周期，包括生成队友的配置文件、启动队友的线程来执行工作循环、维护队友的状态（工作中、空闲、已关闭）以及提供接口来列出所有队友的状态。
+    每个队友agent会在自己的线程里运行一个循环，处理来自MessageBus的消息，执行工具调用，并根据状态自动切换到空闲模式以等待新的任务。''' 
 class TeammateManager:
     def __init__(self, bus: MessageBus, task_mgr: TaskManager):
         TEAM_DIR.mkdir(exist_ok=True)
@@ -582,13 +603,13 @@ class TeammateManager:
 
     def _save(self):
         self.config_path.write_text(json.dumps(self.config, indent=2))
-
+    # config {"team_name": "default", "members": [{name: alice, role: coder, status: idle}]}
     def _find(self, name: str) -> dict:
         for m in self.config["members"]:
             if m["name"] == name:
                 return m
         return None
-
+    
     def spawn(self, name: str, role: str, prompt: str) -> str:
         member = self._find(name)
         if member:

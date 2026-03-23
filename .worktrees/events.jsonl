@@ -1,0 +1,8 @@
+{"event": "worktree.create.before", "ts": 1773942037.749702, "task": {"id": 1}, "worktree": {"name": "auth-refactor", "base_ref": "HEAD"}}
+{"event": "worktree.create.after", "ts": 1773942399.9866612, "task": {"id": 1}, "worktree": {"name": "auth-refactor", "path": "/Users/chablino/to7for/Ai/learn-claude-code/.worktrees/auth-refactor", "branch": "wt/auth-refactor", "status": "active"}}
+{"event": "worktree.create.before", "ts": 1773942429.320512, "task": {"id": 2}, "worktree": {"name": "ui-login", "base_ref": "HEAD"}}
+{"event": "worktree.create.after", "ts": 1773942449.8814468, "task": {"id": 2}, "worktree": {"name": "ui-login", "path": "/Users/chablino/to7for/Ai/learn-claude-code/.worktrees/ui-login", "branch": "wt/ui-login", "status": "active"}}
+{"event": "worktree.keep", "ts": 1773943105.428204, "task": {"id": 2}, "worktree": {"name": "ui-login", "path": "/Users/chablino/to7for/Ai/learn-claude-code/.worktrees/ui-login", "status": "kept"}}
+{"event": "worktree.remove.before", "ts": 1773943819.466691, "task": {"id": 1}, "worktree": {"name": "auth-refactor", "path": "/Users/chablino/to7for/Ai/learn-claude-code/.worktrees/auth-refactor"}}
+{"event": "task.completed", "ts": 1773943943.7664661, "task": {"id": 1, "subject": "Backend Authentication API", "status": "completed"}, "worktree": {"name": "auth-refactor"}}
+{"event": "worktree.remove.after", "ts": 1773943987.150937, "task": {"id": 1}, "worktree": {"name": "auth-refactor", "path": "/Users/chablino/to7for/Ai/learn-claude-code/.worktrees/auth-refactor", "status": "removed"}}

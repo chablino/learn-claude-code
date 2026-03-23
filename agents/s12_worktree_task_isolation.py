@@ -125,7 +125,7 @@ class TaskManager:
         ids = []
         for f in self.dir.glob("task_*.json"):
             try:
-                ids.append(int(f.stem.split("_")[1]))
+                ids.append(int(f.stem.split("_")[-1])) # 如果文件叫 task_12.json，f.stem 会直接帮你剥离掉扩展名，只留下核心文件名："task_12"
             except Exception:
                 pass
         return max(ids) if ids else 0
@@ -200,7 +200,13 @@ class TaskManager:
 
     def list_all(self) -> str:
         tasks = []
-        for f in sorted(self.dir.glob("task_*.json")):
+        # for f in sorted(self.dir.glob("task_*.json")):
+        #     tasks.append(json.loads(f.read_text()))
+        files = sorted(                         #mybug
+            self.dir.glob("task_*.json"), 
+            key=lambda f: int(f.stem.split("_")[-1])
+        )
+        for f in files:
             tasks.append(json.loads(f.read_text()))
         if not tasks:
             return "No tasks."
